@@ -40,18 +40,22 @@ def baseline_drift(g: pd.Series, window: int = 3) -> pd.Series:
     return g.shift(1) + g.diff().rolling(window).mean()
 
 
-def baseline_arima(g: pd.Series) -> pd.Series:
+def baseline_arima(g: pd.Series, burn_in: int = 60) -> pd.Series:
+    """滚动一步前瞻 ARIMA(1,1,1)：每月只用当月之前的数据预测下月（诚实的外推基准）。"""
     try:
         from statsmodels.tsa.arima.model import ARIMA
     except ImportError:
         return pd.Series(np.nan, index=g.index)
-    pred = pd.Series(np.nan, index=g.index, dtype=float)
     vals = g.dropna()
-    if len(vals) < 40:
-        return pred
-    model = ARIMA(vals, order=(1, 1, 1)).fit()
-    fc = model.forecast(steps=len(vals))
-    pred.loc[fc.index] = fc.values
+    if len(vals) < burn_in + 5:
+        return pd.Series(np.nan, index=g.index)
+    pred = pd.Series(np.nan, index=vals.index, dtype=float)
+    for t in range(burn_in, len(vals)):
+        try:
+            model = ARIMA(vals.iloc[:t], order=(1, 1, 1)).fit()
+            pred.iloc[t] = float(model.forecast(steps=1).iloc[0])
+        except Exception:  # noqa: BLE001
+            pred.iloc[t] = np.nan
     return pred
 
 
