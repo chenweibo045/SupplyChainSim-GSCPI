@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.DS_Store
+.venv/
+.ipynb_checkpoints/
+# 数据文件体积大且多为再分发受限，不入库（下载脚本与指引已入库）
+data/raw/*.xlsx
+data/raw/*.csv
+data/processed/*.csv
+.env
