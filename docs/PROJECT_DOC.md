@@ -5,7 +5,8 @@
 > 本文档替代 2026-10 版《SupplyChainSim-GSCPI.docx》。相对旧版的主要更新：
 > ① 官方聚合方法已调研闭环（NY Fed Staff Report 1017），"27 个指标如何聚合"的
 > 卡点已解决；② 修正"VAR 剥离"表述——官方为带滞后单方程 OLS 回归；
-> ③ 补充文献综述与创新性论证；④ 记录工程实现状态（7/7 模块自测通过）。
+> ③ 补充文献综述与创新性论证；④ 记录工程实现状态（7/7 模块自测通过）；
+> ⑤ 新增真实数据里程碑：官方发布值 345 期已接入并完成全样本基线回测（drift3 最优）。
 
 ## 一、GSCPI 的含义与官方赋值流程
 
@@ -62,7 +63,7 @@ Step5 官方管道聚合 + 归因：复现 NY Fed 三步管道；贡献分解口
 
 ## 四、工程实现状态
 
-仓库：`chenweibo045/SupplyChainSim-GSCPI`。全部模块 `--selftest` 离线通过（7/7）：
+仓库：`chenweibo045/SupplyChainSim-GSCPI`（本仓库）。全部模块 `--selftest` 离线通过（7/7）：
 
 | 模块 | 内容 | 验收 |
 |---|---|---|
@@ -72,17 +73,31 @@ Step5 官方管道聚合 + 归因：复现 NY Fed 三步管道；贡献分解口
 | `agents/{manufacturers,shippers,ports}.py` | 13 个集聚智能体，消息黑板博弈 | 2 轮循环传导：绕航→恐慌采购 |
 | `physics/{routing,pmi_mapping}.py` | 查表结算 + 边际递减叠加（封顶 ±60%） | 绕航 +11.8 天 / Harpex 弹性 |
 | `sim/{orchestrator,assimilation}.py` | 编排 + 同化；`--demo red_sea` 端到端 | ΔGSCPI +3.7，归因可解释 |
-| `backtest/evaluate.py` | naive/drift/ARIMA 基准 + RMSE/MAE/方向准确率 | 排行榜输出正常 |
+| `backtest/evaluate.py` | naive/drift/滚动 ARIMA 基准 + RMSE/MAE/方向准确率 | 见下方真实数据排行榜 |
+| `data/{download_data,load_official}.py` | 官方 GSCPI 发布值下载与解析 | 已接入 345 期（1998-01 ~ 2026-09） |
+
+**真实数据里程碑（2026-11-03）**：官方 GSCPI 发布值已下载接入（`python data/download_data.py && python data/load_official.py`），345 期月度数据，最新读数 +1.284（2026-09），历史峰值 +4.429（2021-12）。全样本滚动一步前瞻基线排行榜（RMSE / MAE / 方向准确率）：
+
+| 模型 | RMSE | MAE | 方向准确率 |
+|---|---|---|---|
+| naive（下期=本期） | 0.3712 | 0.2766 | 0.4738 |
+| drift3（近 3 期动量外推） | **0.3077** | **0.2298** | **0.5702** |
+| ARIMA(1,1,1) 滚动 | 0.3928 | 0.2913 | 0.4526 |
+
+两个可直接用于汇报的发现：① GSCPI 惯性极强，drift3 是当前最优基准，MAS 预测必须
+超越它才有价值；② ARIMA(1,1,1) 弱于朴素基准且方向准确率低于抛硬币，说明简单
+结构时序模型在此序列上外推失效——这正好论证了"结构化冲击 + 物理结算"路线的必要性。
 
 运行：`pip install -r requirements.txt && python selftest.py`；
-演示：`python -m sim.orchestrator --demo red_sea`；沙盘：`streamlit run app/streamlit_app.py`。
+演示：`python -m sim.orchestrator --demo red_sea`；回测：`python -m backtest.evaluate --gscpi data/processed/gscpi_official.csv`；沙盘：`streamlit run app/streamlit_app.py`。
 
 ## 五、已知局限与下一步
 
-1. **真实数据接入**：PMI 分项为付费数据（Haver/Bloomberg/S&P Global），按
-   `data/raw/SOURCES.md` 指引获取或采用代理序列并披露口径差异；官方 GSCPI 发布值
-   用 `python data/download_data.py` 下载，作为对标锚（M4）。
-2. **事件回测**：2021 疫情峰值、2023Q4 红海危机窗口，与三个 baseline 对比（M4）。
+1. **真实数据接入（部分完成）**：官方 GSCPI 发布值已下载接入，作为对标锚（M4 完成）；
+   PMI 分项为付费数据（Haver/Bloomberg/S&P Global），按 `data/raw/SOURCES.md` 指引获取
+   或采用代理序列并披露口径差异。
+2. **事件回测（进行中）**：全样本 baseline 排行榜已出（见第四节）；下一步把 MAS 预测序列
+   接入 `run_leaderboard` 的 `ours` 槽，重点考核 2021 疫情峰值、2023Q4 红海危机两个窗口。
 3. **LLM 随机性**：正式实验 temperature=0、固定 prompt、N 次运行取中位数并报离散度。
 4. **方向统一**：真实 PMI 分项进入管道前需统一方向（交货时间数值越低越顺畅）。
 
