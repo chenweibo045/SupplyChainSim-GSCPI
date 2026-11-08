@@ -1,83 +1,75 @@
-# SupplyChainSim-GSCPI
+# SupplyChainSim-GSCPI v2
 
-基于多智能体博弈与数据同化的全球供应链压力指数（GSCPI）预测系统。
+基于多智能体博弈与数据同化的全球供应链压力指数（GSCPI）预测系统——**可执行参考实现**。
 
-**核心思想**：让 LLM 负责"看懂新闻"和"模拟微观主体的定性决策"，让物理方程与
-官方计量管道负责"精准算数"——从机制上规避 LLM 数值幻觉（agent bullwhip），
-同时保留对红海危机等外生结构突变的行为模拟能力与因果归因能力。
+> **版本说明（2026-11-08）**：本仓库 main 分支已重构为 v2（`scsim` 包）。v1 代码保留在
+> [`archive/v1-legacy`](https://github.com/chenweibo045/SupplyChainSim-GSCPI/tree/archive/v1-legacy) 分支。
+> 重构原因：v1 的结算口径（把百分比变化当 z 分）与回测口径（drift3 含未来信息、
+> 方向准确率错位一期）存在三个会改变结论的错误，详见 `docs/PROJECT_DOC.md` 与 v3 项目文档。
 
-## 系统流程（5 步）
+## 核心思想
 
-```
-[新闻/数据] → Step1 信号解析(LLM→Shock四元组)
-           → Step2 13个智能体多轮消息循环博弈(只输出定性意图)
-           → Step3 物理/运筹结算(查表: 绕航里程→延迟天数→运价弹性)
-           → Step4 高频数据同化 + 27维指标矩阵合成
-           → Step5 复现纽约联储官方管道(需求剥离→PCA→标准化) + 归因报告
-```
+让 LLM 负责"看懂新闻"和"模拟微观主体的定性决策"，让物理查表与官方计量管道负责
+"精准算数"——从机制上规避 LLM 数值幻觉（agent bullwhip）。
+
+**关键概念澄清**：PCA 不是"我们选的预测方法"，而是 GSCPI **官方定义**的一部分
+（NY Fed Staff Report 1017：需求剥离 → 第一主成分 → 标准化）。任何预测系统必须复用
+同一条聚合管道，预测值才与官方发布值可比。
 
 ## 快速开始
 
 ```bash
-pip install -r requirements.txt
-python selftest.py                    # 全部模块离线自测（7/7 应通过）
-python -m sim.orchestrator --demo red_sea   # 红海案例端到端演示
-python data/download_data.py          # 下载官方GSCPI + 27序列获取指引
-streamlit run app/streamlit_app.py    # 情景沙盘（可选）
+python -m venv .venv && .venv/bin/pip install numpy pandas matplotlib
+.venv/bin/python -m scsim.demo --selftest    # 自测（官方管道 corr=0.992 合成验证 + 红海情景）
+.venv/bin/python -m scsim.demo               # 全流程 + 出图（results/）
 ```
 
-## 目录结构
+只需 `numpy / pandas / matplotlib`，不需要 sklearn、statsmodels、LLM API，Python 3.9+ 离线可复现。
 
-| 路径 | 内容 |
+## 目录
+
+| 文件 | 作用 |
 |---|---|
-| `pipeline/` | 官方 GSCPI 管道复现：需求剥离（单方程 OLS + 2 期滞后，注意**不是 VAR**）→ PCA 第一主成分（Stock-Watson 式 EM 填补缺失）→ 标准化；`validate.py` 对标官方发布值（目标 corr ≥ 0.95） |
-| `agents/` | `parser.py` 新闻→Shock（LLM JSON Schema + 规则回退）；`base.py` 基类与 Intent 定性约定；`manufacturers/shippers/ports.py` 三类共 13 个集聚智能体 |
-| `physics/` | 纯查表结算：`routing.py` 绕航（3500nm→~11.8 天）与运价弹性；`pmi_mapping.py` 意图→PMI 三分项增量（边际递减叠加） |
-| `sim/` | `orchestrator.py` 消息黑板多轮博弈 + 结算 + 27 维合成；`assimilation.py` 按频率分层覆写（运价类同化/PMI 类模拟） |
-| `backtest/` | baseline（naive/drift/ARIMA）+ RMSE/MAE/方向准确率排行榜 |
-| `app/` | Streamlit 情景沙盘：新闻输入→预测值+归因+决策轨迹 |
-| `data/` | `download_data.py` 官方数据下载 + `raw/SOURCES.md` 27 子指标获取指引 |
-| `docs/` | 项目文档 v2（含方法修正与文献综述） |
+| `scsim/profiles.py` | 13 个智能体的 Profile（身份/禀赋暴露/行为参数三层，字段带单位与来源标注） |
+| `scsim/actions.py` | 动作空间：12 个动作 × 强度档位 0–3（u(k)=k/3），含前置条件与效应表 |
+| `scsim/dynamics.py` | 状态更新算子：perceive → belief → decide → transition 四段式 + 黑板传导矩阵 TRANSMISSION |
+| `scsim/settle.py` | 状态 → 27 个 GSCPI 子指标 → σ 归一 → ΔGSCPI（分通道增益） |
+| `scsim/aggregate.py` | 官方三步管道复现（单方程 OLS 需求剥离 → SVD PCA/EM 填补 → 标准化）+ 精确线性归因 |
+| `scsim/backtest.py` | 诚实回测：修正 look-ahead 与方向指标；事件窗口留一校准；DM 检验 |
+| `scsim/events.py` | 12 个历史冲击的结构化编码（与在线 LLM 输出同格式） |
+| `scsim/demo.py` | 端到端演示：管道复现 / 红海情景 / 反事实归因 / 留一事件回测 / 增益标定 |
+| `scsim/viz.py` | 论文用图（历史序列、冲量检验、状态轨迹、归因、标定） |
+| `data/gscpi_official.csv` | 官方 GSCPI 发布值（1998-01 ~ 2026-10，346 期，来源见 data/SOURCES.md） |
+| `results/` | 可复现实验输出（csv/json；运行 demo 重新生成，png 图亦同） |
 
-## 设计纪律（为什么这样拆）
+## 主要实证结论（全部可用 `python -m scsim.demo` 复现）
 
-1. **LLM 不出数字**：Agent 只输出 `Intent(action, strength)` 枚举，所有定量
-   变化在 `physics/` 查表完成 → 杜绝算术幻觉。
-2. **真博弈而非并行独白**：意图经黑板广播，下游 Agent 下一轮感知
-   （航运绕航 → 制造商恐慌 → 港口排队），支持 N 轮迭代。
-3. **官方口径聚合**：预测值与纽约联储发布值走同一条数学管道，回测可比；
-   载荷全样本一次估计并固定。
-4. **离线可复现**：所有模块 `--selftest` 用固定随机种子合成数据自验，
-   不依赖付费数据源即可演示全链路。
+1. **官方管道复现正确**：合成面板上与真实因子 corr = 0.992（仅证明管道写对，不代表接上真实 27 序列后同样准确）。
+2. **红海情景（2023-12）**：模型 ΔGSCPI 首月 +0.305，但实际指数连续三个月下跌
+   （−0.184 / −0.041 / −0.207）——单一运价通道冲击不足以推动 27 维主成分指数。
+3. **GSCPI 近似随机游走**：修正口径后 naive RMSE 0.377 已是强基准；唯一略优的是
+   均值回复基准 0.9·G（0.371）。旧版"drift3 最优"是 look-ahead 的产物（0.444 修正后显著更差，DM = −3.81）。
+4. **机制冲量暂无增量信息**：12 事件 × 3 期留一检验，模型冲量与实际变动 r = −0.31，
+   0/12 跑赢"不变"基准；剔除均值回复后增量解释力 ≈ 0。
+5. **增益标定**：按波动率对齐历史的隐含增益为 0.83，当前演示增益 0.30 偏保守约 2.8 倍。
+6. **归因可用**：载荷冻结时指标级归因精确可加；智能体级反事实归因（红海 3 个月：
+   两家绕航承运人合计 76%，交互残差 −11.6%）。
 
-## 里程碑
+> 结论 3–4 不否定系统价值，但否定"以点预测精度超越基线"的主张。
+> 建议定位：**结构化重构 + 情景归因 + 实时监测**（见 v3 项目文档第 9 章）。
 
-- [x] M0 官方管道复现（含离线自测；真实数据对标见 `pipeline/validate.py`）
-- [x] M1 信号解析（LLM 通道 + 规则回退）
-- [x] M2 智能体集群 + 物理结算（红海案例验收：绕航 +11.8 天、Harpex 封顶 +60%）
-- [x] M3 消息循环博弈 + 27 维矩阵对接官方管道
-- [ ] M4 真实数据接入 + 事件窗口回测（2021 疫情峰值 / 2023Q4 红海危机）+ 论文
+## 与 v1 的关键差异
 
-## 参考文献
-
-1. Benigno, G., di Giovanni, J., Groen, J. J. J., & Noble, A. I. (2022).
-   *The GSCPI: A New Barometer of Global Supply Chain Pressures.*
-   NY Fed Staff Report No. 1017. —— 官方构建方法（需求剥离→PCA→标准化）
-2. Benigno, G., di Giovanni, J., Groen, J. J. J., & Noble, A. I. (2022-01-04).
-   *A New Barometer of Global Supply Chain Pressures.* Liberty Street Economics.
-3. Benigno, G., Clark, H. L., Cross-Bermingham, W., & Nourbash, E. (2023-01-06).
-   *Global Supply Chain Pressure Index: The China Factor.* Liberty Street Economics.
-   —— 分项贡献分解范式（本项目归因报告口径）
-4. Stock, J. H., & Watson, M. W. (2002). *Forecasting Using Principal Components
-   from a Large Number of Predictors.* JASA 97(460), 1167–1179. —— PCA 聚合理论出处
-5. Bernanke, B. S., Boivin, J., & Eliasz, P. (2005). *Measuring the Effects of
-   Monetary Policy: A FAVAR Approach.* QJE 120(1), 387–422.
-6. Bryan, M. F., & Cecchetti, S. G. (1994). *Measuring Core Inflation.* NBER Macro Annual.
-   —— "先净化、后聚合"的 CPI 版思想
-7. Ishrak, A. M., et al. (2025). *Predicting the GSCPI from China's Sectoral Stock
-   Returns.* IEOM Bangladesh Proceedings. —— 最接近的 GSCPI 预测文献
+1. **单位修正**：v1 把"百分比变化 / 100"当作 z 分增量 → 红海情景算出 ΔGSCPI≈+3.7
+   （历史单月最大仅 +1.40）。v2 用 `Δz = Δx / σ_x` + 分通道增益标定。
+2. **回测修正**：drift3 含未来信息（`g.diff().rolling(3)`）→ 修正后 RMSE 0.314→0.444；
+   方向准确率错位一期 → 修正后 AR(1) 方向命中 0.532。
+3. **状态更新重构**：运价由"每月乘 1.22"改为"压力池 + 部分调整"，避免指数爆炸；
+   指标是有记忆的状态量，不是当期动作的函数。
+4. **智能体规范化**：Profile 三层结构（身份/禀赋/行为）、12 动作 × 4 档位、
+   TRANSMISSION 黑板传导矩阵，与 v3 项目文档第 5 章一一对应。
 
 ## 免责声明
 
-本项目为学术研究原型。合成数据演示仅用于验证工程链路；任何结论以接入真实
-数据后的回测为准。27 个底层分项多为商业数据，使用时请遵守各数据商许可。
+学术原型。合成数据演示仅验证工程链路；一切结论以接入真实 27 个子指标序列后的回测为准。
+底层分项多为商业数据（Haver/Bloomberg/S&P Global），使用须遵守各数据商许可。

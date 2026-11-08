@@ -1,9 +1,3 @@
-pandas>=2.0
 numpy>=1.24
-scikit-learn>=1.3
-scipy>=1.10
-# 可选：ARIMA baseline（缺失时自动跳过该基准）
-# statsmodels>=0.14
-# 可选：LLM 解析与仪表盘
-# openai>=1.0
-# streamlit>=1.30
+pandas>=2.0
+matplotlib>=3.7

@@ -1,118 +1,34 @@
-# SupplyChainSim-GSCPI 项目文档（v2 · 2026-11-03）
+# 项目文档索引（v3 · 2026-11-08）
 
-预测供应链指标 GSCPI：基于多智能体博弈与数据同化的全球供应链压力预测系统
+**完整项目文档**：`SupplyChainSim-GSCPI_完整项目文档_v3.docx`
+（11 章 + 4 附录：官方算法核对、ConsumerSim 精读、目标定义、六层架构、多智能体规范、
+同化、归因、实验与可行性评估、12 周路线图、论文建议）。
 
-> 本文档替代 2026-10 版《SupplyChainSim-GSCPI.docx》。相对旧版的主要更新：
-> ① 官方聚合方法已调研闭环（NY Fed Staff Report 1017），"27 个指标如何聚合"的
-> 卡点已解决；② 修正"VAR 剥离"表述——官方为带滞后单方程 OLS 回归；
-> ③ 补充文献综述与创新性论证；④ 记录工程实现状态（7/7 模块自测通过）；
-> ⑤ 新增真实数据里程碑：官方发布值 345 期已接入并完成全样本基线回测（drift3 最优）。
+本文件为其内容摘要与审校记录。
 
-## 一、GSCPI 的含义与官方赋值流程
+## 三句话版本
 
-**概念**：全球供应链压力指数（GSCPI）由纽约联邦储备银行于 2022 年推出
-（Benigno, di Giovanni, Groen & Noble, Staff Report No. 1017），将复杂的全球
-供应链瓶颈提炼为单一综合指标。指数以历史均值为 0、历史标准差为单位归一化：
-> 0 表示压力高于正常水平（疫情期间峰值曾超 +4.0），< 0 表示顺畅/过剩。
+1. **指标怎么来的**：27 个子指标 → 需求剥离（逐序列单方程 OLS）→ 第一主成分 → 除以历史标准差。PCA 是定义，不是预测方法。
+2. **我们做什么**：13 个集聚智能体把"新闻冲击"翻译成 27 个子指标的月度增量，走同一条官方管道得到可比的 GSCPI，并把变动精确拆回每个智能体的动作。
+3. **能不能成**：作为"重构/归因/情景"系统可行且有论文点；作为"点预测打赢基线"的系统，当前证据不支持（r = −0.31，0/12 事件胜出）。
 
-**数据构成（27 = 21 + 6）**：
-- 运输成本 6 项：BDI（干散货）、Harpex（集装箱租船）、4 个 BLS 进/出口空运价格指数；
-- 7 大经济体（中、美、欧元区、日、韩、台、英）× 3 个制造业 PMI 核心分项：
-  供应商交货时间、积压订单、采购库存。
+## 四条会议要求的落实情况
 
-**官方聚合管道（三步，已调研确认）**：
-
-```
-27 个月度序列
-  → ① 需求剥离：每个 PMI 分项对本经济体「新订单」做 OLS 回归（当期+2期滞后）取残差；
-       运输成本对「GDP 加权新订单 + GDP 加权投入品采购量」回归取残差
-       ⚠ 是单方程回归，不是 VAR 系统（旧版文档表述已修正）
-  → ② PCA：27 个残差序列标准化后提取第一主成分（Stock & Watson 2002 扩散指数法，
-       同时用公共成分 EM 式填补历史缺失值；载荷全样本一次估计）
-  → ③ 标准化：符号归一（压力上升 = 指数上升），除以历史标准差，按月发布
-```
-
-与 CPI 聚合的关系：CPI 是人工权重加权平均（Laspeyres 支出份额；截尾均值/中位数
-先去噪），GSCPI 是数据驱动因子加权（PCA 载荷，无人工权重）。两者共享"先净化、
-后聚合"的思想骨架，理论根基同为动态因子模型（Stock & Watson 2002；
-Bernanke-Boivin-Eliasz 2005 FAVAR）。
-
-## 二、现有预测工作调研
-
-| 路线 | 代表 | 局限 |
+| 要求 | 状态 | 位置 |
 |---|---|---|
-| 官方 Nowcasting | 高频运价 + 早期 PMI 线性外推 | 无法感知文本/地缘突变 |
-| 传统计量 | VAR/VECM/MIDAS | 黑盒拟合，无行为博弈 |
-| 机器学习 | LSTM/TFT/XGBoost（Ishrak et al. 2025 用中国行业股指预测 GSCPI，OOS R²≈0.85） | 需大量历史样本，外推弱 |
-| LLM 多智能体 | OptiGuide、EconAgent；Long et al.(2026) 发现 "agent bullwhip" | **尚无针对 GSCPI 的 MAS 预测** |
+| 1. 智能体 Profile / Action Space / 状态更新 | ✅ 已实现并自测通过 | `scsim/profiles.py`、`scsim/actions.py`、`scsim/dynamics.py`（四段式 + TRANSMISSION 矩阵） |
+| 2. Demo 可运行、结论准确 | ✅ `python -m scsim.demo` 全流程复现 | `scsim/demo.py`、`results/` |
+| 3. PCA 官方定义核对 + ConsumerSim 汇总逻辑 | ✅ 已核对原文 | 文档第 1–2 章；`scsim/aggregate.py` |
+| 4. 最终完整项目文档 | ✅ v3 文档（2026-11-08 审校修订版） | 仓库外 docx，见用户项目目录 |
 
-**创新性**：本项目首次将 ConsumerSim 式 MAS 范式迁移至 GSCPI 预测，填补空白。
+## 审校记录（2026-11-08）
 
-## 三、系统方案（5 步流水线）
-
-```
-Step1 信号解析：新闻 → LLM 结构化 Shock 四元组（位置/事件/渠道/严重度）
-Step2 多智能体博弈：7 制造 + 3 航运 + 3 港口，消息黑板 N 轮循环，只输出定性意图
-Step3 物理结算：查表（绕航 3500nm → +11.8 天；GRI 弹性 → Harpex +25%），LLM 不出数字
-Step4 数据同化 + 矩阵合成：运价类真实覆写 / PMI 类模拟，产出 27 维矩阵
-Step5 官方管道聚合 + 归因：复现 NY Fed 三步管道；贡献分解口径同官方"中国因素"博文
-```
-
-**设计纪律**：LLM 只做定性决策（防算术幻觉 + 防 agent bullwhip）；定量全走物理查表；
-聚合走官方口径（预测值与发布值可比）；载荷固定保证回测口径稳定。
-
-## 四、工程实现状态
-
-仓库：`chenweibo045/SupplyChainSim-GSCPI`（本仓库）。全部模块 `--selftest` 离线通过（7/7）：
-
-| 模块 | 内容 | 验收 |
-|---|---|---|
-| `pipeline/official_gscpi.py` | 官方三步管道复现（numpy OLS + sklearn PCA + EM 填补） | 合成数据上与真实因子 corr = 0.994 |
-| `pipeline/validate.py` | 与官方发布值对标 | 目标 corr ≥ 0.95（待真实数据） |
-| `agents/parser.py` | 新闻 → Shock（LLM JSON Schema + 规则回退） | 红海案例解析正确 |
-| `agents/{manufacturers,shippers,ports}.py` | 13 个集聚智能体，消息黑板博弈 | 2 轮循环传导：绕航→恐慌采购 |
-| `physics/{routing,pmi_mapping}.py` | 查表结算 + 边际递减叠加（封顶 ±60%） | 绕航 +11.8 天 / Harpex 弹性 |
-| `sim/{orchestrator,assimilation}.py` | 编排 + 同化；`--demo red_sea` 端到端 | ΔGSCPI +3.7，归因可解释 |
-| `backtest/evaluate.py` | naive/drift/滚动 ARIMA 基准 + RMSE/MAE/方向准确率 | 见下方真实数据排行榜 |
-| `data/{download_data,load_official}.py` | 官方 GSCPI 发布值下载与解析 | 已接入 345 期（1998-01 ~ 2026-09） |
-
-**真实数据里程碑（2026-11-03）**：官方 GSCPI 发布值已下载接入（`python data/download_data.py && python data/load_official.py`），345 期月度数据，最新读数 +1.284（2026-09），历史峰值 +4.429（2021-12）。全样本滚动一步前瞻基线排行榜（RMSE / MAE / 方向准确率）：
-
-| 模型 | RMSE | MAE | 方向准确率 |
-|---|---|---|---|
-| naive（下期=本期） | 0.3712 | 0.2766 | 0.4738 |
-| drift3（近 3 期动量外推） | **0.3077** | **0.2298** | **0.5702** |
-| ARIMA(1,1,1) 滚动 | 0.3928 | 0.2913 | 0.4526 |
-
-两个可直接用于汇报的发现：① GSCPI 惯性极强，drift3 是当前最优基准，MAS 预测必须
-超越它才有价值；② ARIMA(1,1,1) 弱于朴素基准且方向准确率低于抛硬币，说明简单
-结构时序模型在此序列上外推失效——这正好论证了"结构化冲击 + 物理结算"路线的必要性。
-
-运行：`pip install -r requirements.txt && python selftest.py`；
-演示：`python -m sim.orchestrator --demo red_sea`；回测：`python -m backtest.evaluate --gscpi data/processed/gscpi_official.csv`；沙盘：`streamlit run app/streamlit_app.py`。
-
-## 五、已知局限与下一步
-
-1. **真实数据接入（部分完成）**：官方 GSCPI 发布值已下载接入，作为对标锚（M4 完成）；
-   PMI 分项为付费数据（Haver/Bloomberg/S&P Global），按 `data/raw/SOURCES.md` 指引获取
-   或采用代理序列并披露口径差异。
-2. **事件回测（进行中）**：全样本 baseline 排行榜已出（见第四节）；下一步把 MAS 预测序列
-   接入 `run_leaderboard` 的 `ours` 槽，重点考核 2021 疫情峰值、2023Q4 红海危机两个窗口。
-3. **LLM 随机性**：正式实验 temperature=0、固定 prompt、N 次运行取中位数并报离散度。
-4. **方向统一**：真实 PMI 分项进入管道前需统一方向（交货时间数值越低越顺畅）。
-
-## 六、参考文献
-
-1. Benigno, di Giovanni, Groen & Noble (2022). *The GSCPI: A New Barometer of Global Supply Chain Pressures.* NY Fed Staff Report 1017.
-2. Benigno, di Giovanni, Groen & Noble (2022). *A New Barometer of Global Supply Chain Pressures.* Liberty Street Economics.
-3. Benigno, Clark, Cross-Bermingham & Nourbash (2023). *GSCPI: The China Factor.* Liberty Street Economics.（贡献分解范式）
-4. Stock & Watson (2002). *Forecasting Using Principal Components from a Large Number of Predictors.* JASA 97(460). / *Macroeconomic Forecasting Using Diffusion Indexes.* JBES 20(2).
-5. Bernanke, Boivin & Eliasz (2005). *Measuring the Effects of Monetary Policy: A FAVAR Approach.* QJE 120(1).
-6. Bryan & Cecchetti (1994). *Measuring Core Inflation.* NBER Macro Annual.
-7. Ishrak et al. (2025). *Predicting the GSCPI from China's Sectoral Stock Returns.* IEOM Bangladesh Proceedings.
-8. Long et al. (2026). 串行供应链生成式智能体 "agent bullwhip" 研究（arXiv:2607.19967 引述）。
-
-## 七、免责声明
-
-学术原型。合成数据演示仅验证工程链路；一切结论以接入真实数据后的回测为准。
-底层分项多为商业数据，使用须遵守各数据商许可。
+对 v3 文档与 v2 代码做了逐数字核验（`python -m scsim.demo` 全量复现）：
+- 文档 §8 全部数字与代码输出一致（红海 +0.305 / 实际 −0.184；drift3 修正 0.444；
+  naive 0.377；meanrev 0.371；事件留一 r=−0.31、0/12；隐含增益 0.83；归因残差 −0.131）。
+- 修正 3 处：① GSCPI 见顶月份 2021-11 → **2021-12**（当前数据版本峰值 +4.426）；
+  ② DM 统计量 −3.76 → **−3.81**；③ +3.93 → **+3.95**（随 2026-10 数据版本更新重算）。
+- ConsumerSim 文献已核实：arXiv:2606.30395（Huang et al., Fudan, 2026-06），
+  其汇总链条（核心人格回答分布 → 事后分层扩展 → 行为惯性对齐 → 官方计分）与文档 §2.2 描述一致。
+- 代码修复 1 处：`scsim/backtest.py` 留一事件表的 pred/actual 列由 np.float64 原始 repr
+  改为纯浮点（仅影响 results/event_loo.csv 的可读性，不影响任何数字）。
