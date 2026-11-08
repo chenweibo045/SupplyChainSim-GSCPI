@@ -1,0 +1,5 @@
+{
+  "corr_with_true_factor": 0.9921,
+  "explained_var": 0.8999,
+  "n_months": 300
+}

@@ -1,0 +1,8 @@
+{
+  "n_sim": 240,
+  "hist_sd_delta": 0.377,
+  "hist_p95_abs_delta": 0.7757,
+  "sim_sd_unit_gain": 0.4524,
+  "implied_common_gain": 0.8334,
+  "note": "implied_common_gain = 历史σ(ΔGSCPI) / 单位增益下模拟σ(ΔGSCPI)"
+}
